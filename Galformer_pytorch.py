@@ -745,8 +745,8 @@ class Transformer(nn.Module):
         return final_output
 
 def calculate_accuracy(pre, real):
-    print('pre.shape', pre.shape, flush=True)
-    print('real.shape', real.shape, flush=True)
+    # print('pre.shape', pre.shape, flush=True)
+    # print('real.shape', real.shape, flush=True)
     
     # Overall metrics
     MAPE = sklearn.metrics.mean_absolute_percentage_error(real, pre)
@@ -825,27 +825,27 @@ def up_down_accuracy_loss(real, pre):
         products.append(real[i] *  pre[i])
     accuracy = (sum([int(x > 0) for x in products])) / len(products)
     return accuracy'''
-    print('real.shape', real.shape)
-    print('pre.shape', pre.shape)
+    # print('real.shape', real.shape)
+    # print('pre.shape', pre.shape)
     
     # Flatten tensors to match original TensorFlow behavior
     real_flat = real.view(-1)
     pre_flat = pre.view(-1)
     
-    print('real_flat.shape', real_flat.shape)
-    print('pre_flat.shape', pre_flat.shape)
+    # print('real_flat.shape', real_flat.shape)
+    # print('pre_flat.shape', pre_flat.shape)
     
     mse = torch.mean(torch.square(pre_flat - real_flat))
-    print('mse！！！！！', mse.item())
-    print('real666.shape', real_flat.shape)
-    print('pre666.shape', pre_flat.shape)#real666.shape (None, 3)  pre666.shape (None, 3)
+    # print('mse！！！！！', mse.item())
+    # print('real666.shape', real_flat.shape)
+    # print('pre666.shape', pre_flat.shape)#real666.shape (None, 3)  pre666.shape (None, 3)
     # print('real666', real_flat)
     # print('pre666', pre_flat)
     accu = torch.multiply(real_flat, pre_flat)#矩阵点积，不是乘法，得出正负，正的就是趋势预测正确
     accu = F.relu(accu, inplace=False)#relu(x) = max(0,x)
     accu = torch.sign(accu)#正数变1，0不变
     accu = torch.mean(accu)#取平均
-    print('accu！！！！！', accu.item())#准确率，0.x
+    # print('accu！！！！！', accu.item())#准确率，0.x
     '''result = tf.compat.v1.Session().run(result)
 
     print('resultnumpy', result)
