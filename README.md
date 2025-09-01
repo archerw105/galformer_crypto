@@ -1,4 +1,7 @@
 # Galformer-Improved-Transformer-for-Time-Series-Prediction
+
+Configuration is done in the `config.yaml` file
+
 To train the model, run the following command:
 ```
 python Galformer_pytorch.py
