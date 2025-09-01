@@ -14,3 +14,7 @@ salloc --mem=16g --nodes=1 --ntasks-per-node=1 --cpus-per-task=8   --partition=g
 srun nvidia-smi
 
 srun --unbuffered python Galformer_pytorch.py
+
+sbatch run_galformer.slurm 
+squeue -u $USER
+# scancel JobID

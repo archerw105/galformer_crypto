@@ -1,0 +1,49 @@
+# Galformer Configuration File
+
+# Experiment configuration
+experiment:
+  name: 'galformer_btc_3day_prediction'
+  description: 'Galformer model predicting BTC prices 3 days ahead'
+
+# Data preprocessing
+data:
+  filename: 'Datasets/BTC-USD.csv'
+  division_rate1: 0.8  # train/validation split
+  division_rate2: 0.9  # validation/test split
+  normalize: true
+
+# Model architecture
+model:
+  d_model: 512
+  dense_dim: 2048
+  num_features: 1
+  num_heads: 8
+  num_layers: 6
+  dropout_rate: 0.1
+  
+# Sequence lengths
+sequence:
+  src_len: 20      # encoder input sequence length
+  dec_len: 3       # decoder input sequence length  
+  tgt_len: 3       # target sequence length (predict 3 days ahead)
+  window_size: 20  # same as src_len
+  mulpr_len: 3     # same as tgt_len (predict 3 days ahead)
+
+# Training parameters
+training:
+  epochs: 200
+  batch_size: 64
+  learning_rate: 0.003
+  min_learning_rate: 7e-11
+
+# Learning rate scheduler
+scheduler:
+  T_i: 1
+  T_mult: 2
+  T_cur: 0.0
+
+# Output paths (will be prefixed with runs/{experiment.name}/)
+output:
+  model_path: 'galformer_model_three_days_ahead.pth'
+  predictions_path: 'BTC-USD_Galformer_predictions_three_days_ahead.csv'
+  plot_path: 'BTC-USD_Galformer_predictions_three_days_ahead.png'

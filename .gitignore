@@ -1,1 +1,4 @@
 galformer/
+runs/
+*.err
+*.out

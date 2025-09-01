@@ -14,14 +14,19 @@ from dataclasses import dataclass
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
+import yaml
+import sys
+import os
+
+print("Starting Galformer script...", flush=True)
 
 # Set device
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 if torch.cuda.is_available():
-    print(f'Using GPU: {torch.cuda.get_device_name(0)}')
-    print(f'GPU memory: {torch.cuda.get_device_properties(0).total_memory / 1024**3:.1f} GB')
+    print(f'Using GPU: {torch.cuda.get_device_name(0)}', flush=True)
+    print(f'GPU memory: {torch.cuda.get_device_properties(0).total_memory / 1024**3:.1f} GB', flush=True)
 else:
-    print("Using CPU")
+    print("Using CPU", flush=True)
 
 # Helper functions (replacing transformer_helper_dc imports)
 def positional_encoding(max_position, d_model):
@@ -170,38 +175,63 @@ def validate(model, X_val, y_val, batch_size=32, device='cpu'):
     
     return metrics, predictions, actuals
 
+# Load configuration from YAML file
+print("Loading config.yaml...", flush=True)
+try:
+    with open('config.yaml', 'r') as file:
+        config = yaml.safe_load(file)
+    print("Config loaded successfully!", flush=True)
+except Exception as e:
+    print(f"Error loading config: {e}", flush=True)
+    raise
+
+# Create experiment directory structure
+experiment_name = config['experiment']['name']
+experiment_dir = f"runs/{experiment_name}"
+os.makedirs(experiment_dir, exist_ok=True)
+print(f"Created experiment directory: {experiment_dir}", flush=True)
+
+# Update output paths to use experiment directory
+config['output']['model_path'] = os.path.join(experiment_dir, config['output']['model_path'])
+config['output']['predictions_path'] = os.path.join(experiment_dir, config['output']['predictions_path'])
+config['output']['plot_path'] = os.path.join(experiment_dir, config['output']['plot_path'])
+
+print(f"Outputs will be saved to: {experiment_dir}", flush=True)
+
 class G:
-    # preprocess
-    batch_size = 64 # 128
-    src_len = 20  # encoder input sequence length, the 5 is an arbitrary number
-    dec_len = 1
-    tgt_len = 1  # decoder input sequence length, same length as transformer output
-    window_size = src_len
-    mulpr_len = tgt_len
-    # network
-    d_model = 512
-    dense_dim = 2048
-    num_features = 1  # current, voltage, and soc at t minus G.window_size -> t minus 1   就输入一个差分的adjclose
-    num_heads = 8
+    # Data preprocessing
+    batch_size = config['training']['batch_size']
+    src_len = config['sequence']['src_len']
+    dec_len = config['sequence']['dec_len']
+    tgt_len = config['sequence']['tgt_len']
+    window_size = config['sequence']['window_size']
+    mulpr_len = config['sequence']['mulpr_len']
+    
+    # Network architecture
+    d_model = config['model']['d_model']
+    dense_dim = config['model']['dense_dim']
+    num_features = config['model']['num_features']
+    num_heads = config['model']['num_heads']
     d_k = int(d_model/num_heads)
-    num_layers = 6
-    dropout_rate = 0.1
-    # learning_rate_scheduler
-    T_i = 1
-    T_mult = 2
-    T_cur = 0.0
-    # training
-    epochs = 200 #21 should be T_i + a power of T_mult, ex) T_mult = 2 -> epochs = 2**5 + 1 = 32+1 = 33   257
-    learning_rate = 0.003#0.0045
-    min_learning_rate = 7e-11
-    #weight_decay = 0.0 #No weight decay param in the the keras optimizers
+    num_layers = config['model']['num_layers']
+    dropout_rate = config['model']['dropout_rate']
+    
+    # Learning rate scheduler
+    T_i = config['scheduler']['T_i']
+    T_mult = config['scheduler']['T_mult']
+    T_cur = config['scheduler']['T_cur']
+    
+    # Training parameters
+    epochs = config['training']['epochs']
+    learning_rate = config['training']['learning_rate']
+    min_learning_rate = config['training']['min_learning_rate']
 
 # Train only on BTC-USD data  
-filename = 'Datasets/BTC-USD.csv'
+filename = config['data']['filename']
 df = pd.read_csv(filename,delimiter=',',usecols=['Date','Open','High','Low','Close', 'Adj Close','Volume'])
 df = df.sort_values('Date')
-division_rate1 = 0.8
-division_rate2 = 0.9
+division_rate1 = config['data']['division_rate1']
+division_rate2 = config['data']['division_rate2']
 
 seq_len = G.src_len  # 20 how long of a preceeding sequence to collect for RNN
 tgt = G.tgt_len
@@ -228,7 +258,7 @@ def get_stock_data():
     # print(df1.head())
     df['Adj Close'] = list1
     df = df.reset_index(drop=True)
-    print(df.head())
+    print(df.head(), flush=True)
     return df,list,list1
 
 #先划分训练集测试集,再标准化归一化,避免数据泄露
@@ -242,9 +272,9 @@ def load_data(df, seq_len , mul, normalize=True):
     valid = data[int(row1):int(row2), :]
     test = data[int(row2): , :]
 
-    print('train', train)
-    print('valid', valid)
-    print('test', test)
+    print('train', train, flush=True)
+    print('valid', valid, flush=True)
+    print('test', test, flush=True)
 
     # 训练集和测试集归一化
     if normalize:
@@ -253,9 +283,9 @@ def load_data(df, seq_len , mul, normalize=True):
         valid = standard_scaler.transform(valid)
         test = standard_scaler.transform(test)
 
-    print('train',train)
-    print('valid', valid)
-    print('test', test)
+    print('train',train, flush=True)
+    print('valid', valid, flush=True)
+    print('test', test, flush=True)
     X_train = []  # train列表中4个特征记录
     y_train = []
     X_valid = []
@@ -283,27 +313,27 @@ def load_data(df, seq_len , mul, normalize=True):
     y_valid = np.array(y_valid)
     X_test = np.array(X_test)
     y_test = np.array(y_test)
-    print('train', train.shape)
-    print(train)
-    print('valid', valid.shape)
-    print(valid)
-    print('test', test.shape)
-    print(test)
+    print('train', train.shape, flush=True)
+    print(train, flush=True)
+    print('valid', valid.shape, flush=True)
+    print(valid, flush=True)
+    print('test', test.shape, flush=True)
+    print(test, flush=True)
 
-    print('X_train', X_train.shape)
-    print('y_train', y_train.shape)
-    print('X_valid', X_valid.shape)
-    print('y_valid', y_valid.shape)
-    print('X_test', X_test.shape)
-    print('y_test', y_test.shape)
-    print('df', df)
+    print('X_train', X_train.shape, flush=True)
+    print('y_train', y_train.shape, flush=True)
+    print('X_valid', X_valid.shape, flush=True)
+    print('y_valid', y_valid.shape, flush=True)
+    print('X_test', X_test.shape, flush=True)
+    print('y_test', y_test.shape, flush=True)
+    print('df', df, flush=True)
     X_train = np.reshape(X_train, (X_train.shape[0], X_train.shape[1], amount_of_features))  # (90%maximum, seq-1 ,4) #array才能reshape
     X_valid = np.reshape(X_valid, (X_valid.shape[0], X_valid.shape[1], amount_of_features))
     X_test = np.reshape(X_test, (X_test.shape[0], X_test.shape[1], amount_of_features))  # (10%maximum, seq-1 ,4) #array才能reshape、
 
-    print('X_train', X_train.shape)
-    print('X_valid', X_valid.shape)
-    print('X_test', X_test.shape)
+    print('X_train', X_train.shape, flush=True)
+    print('X_valid', X_valid.shape, flush=True)
+    print('X_test', X_test.shape, flush=True)
     return X_train, y_train, X_valid, y_valid, X_test, y_test  # x是训练的数据，y是数据对应的标签,也就是说y是要预测的那一个特征!!!!!!
 
 # Main execution
@@ -325,9 +355,9 @@ class FullyConnected(nn.Module):
     def __init__(self):
         super(FullyConnected, self).__init__()
         self.dense1 = nn.Linear(G.d_model, G.dense_dim)
-        self.bn1 = nn.BatchNorm1d(G.dense_dim, momentum=0.02, eps=5e-4)  # momentum in PyTorch = 1 - momentum in TF
+        self.bn1 = nn.BatchNorm1d(G.dense_dim, momentum=0.98, eps=5e-4)  # Match TF momentum exactly
         self.dense2 = nn.Linear(G.dense_dim, G.d_model)
-        self.bn2 = nn.BatchNorm1d(G.d_model, momentum=0.05, eps=5e-4)
+        self.bn2 = nn.BatchNorm1d(G.d_model, momentum=0.95, eps=5e-4)
         
         # Initialize weights similar to TensorFlow
         nn.init.kaiming_normal_(self.dense1.weight)
@@ -343,16 +373,16 @@ class FullyConnected(nn.Module):
         x = F.relu(x, inplace=False)
         
         # Reshape for BatchNorm1d: (batch_size * seq_len, features)
-        x = x.view(-1, G.dense_dim)
+        x = x.reshape(-1, G.dense_dim)
         x = self.bn1(x)
-        x = x.view(batch_size, seq_len, G.dense_dim)
+        x = x.reshape(batch_size, seq_len, G.dense_dim)
         
         x = self.dense2(x)
         
         # Reshape for BatchNorm1d: (batch_size * seq_len, features)
-        x = x.view(-1, G.d_model)
+        x = x.reshape(-1, G.d_model)
         x = self.bn2(x)
-        x = x.view(batch_size, seq_len, G.d_model)
+        x = x.reshape(batch_size, seq_len, G.d_model)
         
         return x
 
@@ -382,8 +412,8 @@ class EncoderLayer(nn.Module):
             # feed-forward-network
             self.ffn = FullyConnected()
 
-            self.batchnorm1 = nn.BatchNorm1d(G.d_model, momentum=0.05, eps=batchnorm_eps)
-            self.batchnorm2 = nn.BatchNorm1d(G.d_model, momentum=0.05, eps=batchnorm_eps)
+            self.batchnorm1 = nn.BatchNorm1d(G.d_model, momentum=0.95, eps=batchnorm_eps)
+            self.batchnorm2 = nn.BatchNorm1d(G.d_model, momentum=0.95, eps=batchnorm_eps)
 
             self.dropout_ffn = nn.Dropout(dropout_rate)
 
@@ -405,9 +435,9 @@ class EncoderLayer(nn.Module):
 
             # Add & Norm
             out1 = x + attn_output
-            out1 = out1.view(-1, G.d_model)
+            out1 = out1.reshape(-1, G.d_model)
             out1 = self.batchnorm1(out1)
-            out1 = out1.view(batch_size, seq_len, G.d_model)
+            out1 = out1.reshape(batch_size, seq_len, G.d_model)
 
             ffn_output = self.ffn(out1)
 
@@ -416,9 +446,9 @@ class EncoderLayer(nn.Module):
 
             # Add & Norm
             encoder_layer_out = out1 + ffn_output
-            encoder_layer_out = encoder_layer_out.view(-1, G.d_model)
+            encoder_layer_out = encoder_layer_out.reshape(-1, G.d_model)
             encoder_layer_out = self.batchnorm2(encoder_layer_out)
-            encoder_layer_out = encoder_layer_out.view(batch_size, seq_len, G.d_model)
+            encoder_layer_out = encoder_layer_out.reshape(batch_size, seq_len, G.d_model)
             
             return encoder_layer_out
 
@@ -511,9 +541,9 @@ class DecoderLayer(nn.Module):
 
         self.ffn = FullyConnected()
 
-        self.batchnorm1 = nn.BatchNorm1d(G.d_model, momentum=0.05, eps=batchnorm_eps)
-        self.batchnorm2 = nn.BatchNorm1d(G.d_model, momentum=0.05, eps=batchnorm_eps)
-        self.batchnorm3 = nn.BatchNorm1d(G.d_model, momentum=0.05, eps=batchnorm_eps)
+        self.batchnorm1 = nn.BatchNorm1d(G.d_model, momentum=0.95, eps=batchnorm_eps)
+        self.batchnorm2 = nn.BatchNorm1d(G.d_model, momentum=0.95, eps=batchnorm_eps)
+        self.batchnorm3 = nn.BatchNorm1d(G.d_model, momentum=0.95, eps=batchnorm_eps)
 
         self.dropout_ffn = nn.Dropout(dropout_rate)
 
@@ -536,9 +566,9 @@ class DecoderLayer(nn.Module):
         mult_attn_out1, _ = self.mha1(y, y, y, attn_mask=dec_ahead_mask)
 
         Q1 = y + mult_attn_out1
-        Q1 = Q1.view(-1, G.d_model)
+        Q1 = Q1.reshape(-1, G.d_model)
         Q1 = self.batchnorm1(Q1)
-        Q1 = Q1.view(batch_size, seq_len, G.d_model)
+        Q1 = Q1.reshape(batch_size, seq_len, G.d_model)
 
         # BLOCK 2
         # calculate self-attention using the Q from the first block and K and V from the encoder output.
@@ -546,9 +576,9 @@ class DecoderLayer(nn.Module):
         mult_attn_out2, _ = self.mha2(Q1, enc_output, enc_output, attn_mask=enc_memory_mask)
 
         mult_attn_out2 = mult_attn_out1 + mult_attn_out2
-        mult_attn_out2 = mult_attn_out2.view(-1, G.d_model)
+        mult_attn_out2 = mult_attn_out2.reshape(-1, G.d_model)
         mult_attn_out2 = self.batchnorm2(mult_attn_out2)
-        mult_attn_out2 = mult_attn_out2.view(batch_size, seq_len, G.d_model)
+        mult_attn_out2 = mult_attn_out2.reshape(batch_size, seq_len, G.d_model)
 
         # BLOCK 3
         # pass the output of the second block through a ffn
@@ -559,9 +589,9 @@ class DecoderLayer(nn.Module):
             ffn_output = self.dropout_ffn(ffn_output)
 
         out3 = ffn_output + mult_attn_out2
-        out3 = out3.view(-1, G.d_model)
+        out3 = out3.reshape(-1, G.d_model)
         out3 = self.batchnorm3(out3)
-        out3 = out3.view(batch_size, seq_len, G.d_model)
+        out3 = out3.reshape(batch_size, seq_len, G.d_model)
         
         return out3
 
@@ -657,7 +687,7 @@ class Transformer(nn.Module):
         self.linear_map = nn.Sequential(
             nn.Linear(G.d_model, dense_dim),
             nn.ReLU(),
-            nn.BatchNorm1d(dense_dim, momentum=0.03, eps=5e-4),
+            nn.BatchNorm1d(dense_dim, momentum=0.97, eps=5e-4),
             nn.Linear(dense_dim, 1)
         )
         
@@ -696,12 +726,12 @@ class Transformer(nn.Module):
         batch_size, seq_len, d_model = dec_output.shape
         
         # Apply linear mapping
-        dec_output_flat = dec_output.view(-1, G.d_model)
+        dec_output_flat = dec_output.reshape(-1, G.d_model)
         final_output = self.linear_map[0](dec_output_flat)  # Linear layer
         final_output = self.linear_map[1](final_output)     # ReLU
         final_output = self.linear_map[2](final_output)     # BatchNorm
         final_output = self.linear_map[3](final_output)     # Final Linear
-        final_output = final_output.view(batch_size, seq_len, 1)
+        final_output = final_output.reshape(batch_size, seq_len, 1)
 
         # print('final_output.shape', final_output.shape)
         
@@ -715,21 +745,76 @@ class Transformer(nn.Module):
         return final_output
 
 def calculate_accuracy(pre, real):
-    print('pre.shape', pre.shape)
-    print(pre)
-
-    print('real.shape', real.shape)
-    print(real)
-    # MAPE = np.mean(np.abs((pre - real) / real))
-    MAPE = sklearn.metrics.mean_absolute_percentage_error(real,pre)
-    #MAPE = calculate_MAPE(pre,real)
+    print('pre.shape', pre.shape, flush=True)
+    print('real.shape', real.shape, flush=True)
+    
+    # Overall metrics
+    MAPE = sklearn.metrics.mean_absolute_percentage_error(real, pre)
     RMSE = np.sqrt(np.mean(np.square(pre - real)))
     MAE = np.mean(np.abs(pre - real))
-    R2 = r2_score(pre, real)
+    R2 = r2_score(real, pre)
+    
     dict = {'MAPE': [MAPE], 'RMSE': [RMSE], 'MAE': [MAE], 'R2': [R2]}
     df = pd.DataFrame(dict)
-    print('最终的准确率和指标如下\n',df)
+    print('Overall accuracy metrics:\n', df, flush=True)
     return df
+
+def calculate_multi_day_accuracy(predictions, targets):
+    """
+    Calculate accuracy metrics for multi-day predictions
+    predictions: shape (n_samples, n_days)
+    targets: shape (n_samples, n_days)
+    """
+    print(f'Multi-day predictions shape: {predictions.shape}', flush=True)
+    print(f'Multi-day targets shape: {targets.shape}', flush=True)
+    
+    n_days = predictions.shape[1] if len(predictions.shape) > 1 else 1
+    
+    if n_days == 1:
+        # Single day prediction - use existing function
+        return calculate_accuracy(predictions.flatten(), targets.flatten())
+    
+    # Multi-day predictions
+    results = {}
+    
+    for day in range(n_days):
+        day_pred = predictions[:, day] if len(predictions.shape) > 1 else predictions
+        day_target = targets[:, day] if len(targets.shape) > 1 else targets
+        
+        mape = sklearn.metrics.mean_absolute_percentage_error(day_target, day_pred)
+        rmse = np.sqrt(np.mean(np.square(day_pred - day_target)))
+        mae = np.mean(np.abs(day_pred - day_target))
+        r2 = r2_score(day_target, day_pred)
+        
+        results[f'Day_{day+1}'] = {
+            'MAPE': mape,
+            'RMSE': rmse, 
+            'MAE': mae,
+            'R2': r2
+        }
+        
+        print(f'Day {day+1} metrics - MAPE: {mape:.4f}, RMSE: {rmse:.4f}, MAE: {mae:.4f}, R2: {r2:.4f}', flush=True)
+    
+    # Overall metrics across all days
+    overall_mape = sklearn.metrics.mean_absolute_percentage_error(targets.flatten(), predictions.flatten())
+    overall_rmse = np.sqrt(np.mean(np.square(predictions.flatten() - targets.flatten())))
+    overall_mae = np.mean(np.abs(predictions.flatten() - targets.flatten()))
+    overall_r2 = r2_score(targets.flatten(), predictions.flatten())
+    
+    results['Overall'] = {
+        'MAPE': overall_mape,
+        'RMSE': overall_rmse,
+        'MAE': overall_mae, 
+        'R2': overall_r2
+    }
+    
+    print(f'Overall metrics - MAPE: {overall_mape:.4f}, RMSE: {overall_rmse:.4f}, MAE: {overall_mae:.4f}, R2: {overall_r2:.4f}', flush=True)
+    
+    # Convert to DataFrame for easy viewing
+    results_df = pd.DataFrame(results).T
+    print('Multi-day prediction accuracy metrics:\n', results_df, flush=True)
+    
+    return results_df
 
 def up_down_accuracy_loss(real, pre):
     '''products = []
@@ -740,19 +825,27 @@ def up_down_accuracy_loss(real, pre):
         products.append(real[i] *  pre[i])
     accuracy = (sum([int(x > 0) for x in products])) / len(products)
     return accuracy'''
-    # print('real.shape', real.shape)
-    # print('pre.shape', pre.shape)
-    mse = torch.mean(torch.square(pre - real))
-    # print('mse！！！！！', mse.item())
-    # print('real666.shape', real.shape)
-    # print('pre666.shape', pre.shape)#real666.shape (None, 3)  pre666.shape (None, 3)
-    # print('real666', real)
-    # print('pre666', pre)
-    accu = torch.multiply(real, pre)#矩阵点积，不是乘法，得出正负，正的就是趋势预测正确
+    print('real.shape', real.shape)
+    print('pre.shape', pre.shape)
+    
+    # Flatten tensors to match original TensorFlow behavior
+    real_flat = real.view(-1)
+    pre_flat = pre.view(-1)
+    
+    print('real_flat.shape', real_flat.shape)
+    print('pre_flat.shape', pre_flat.shape)
+    
+    mse = torch.mean(torch.square(pre_flat - real_flat))
+    print('mse！！！！！', mse.item())
+    print('real666.shape', real_flat.shape)
+    print('pre666.shape', pre_flat.shape)#real666.shape (None, 3)  pre666.shape (None, 3)
+    # print('real666', real_flat)
+    # print('pre666', pre_flat)
+    accu = torch.multiply(real_flat, pre_flat)#矩阵点积，不是乘法，得出正负，正的就是趋势预测正确
     accu = F.relu(accu, inplace=False)#relu(x) = max(0,x)
     accu = torch.sign(accu)#正数变1，0不变
     accu = torch.mean(accu)#取平均
-    # print('accu！！！！！', accu.item())#准确率，0.x
+    print('accu！！！！！', accu.item())#准确率，0.x
     '''result = tf.compat.v1.Session().run(result)
 
     print('resultnumpy', result)
@@ -774,8 +867,8 @@ def denormalize(normalized_value):
     df1 = df.drop(0, axis=0)
     df1['Adj Close'] = list1
     df1 = df1.reset_index(drop=True)#index从0开始
-    print(df.head())
-    print(df1.head())
+    print(df.head(), flush=True)
+    print(df1.head(), flush=True)
     data = df.values
     data1 = df1.values
     row1 = round(division_rate1 * list1.shape[0])
@@ -792,11 +885,11 @@ def denormalize(normalized_value):
     '反归一化'
     normalized_value = normalized_value.reshape(-1, 1)
     new = standard_scaler.inverse_transform(normalized_value)#利用m对normalized_value进行反归一化
-    print('new',new.shape)
+    print('new',new.shape, flush=True)
 
     length = y_test.shape[0]
     residual = data[int(row2) + seq_len : int(row2) + seq_len +  mulpre * length, : ]#差分残差从test的seq-1序号天开始到test的倒数第二天,预测加上前一天的残差对应test[seq:]反归一的真实值,注意y_test和预测值是一致的
-    print('residual', residual.shape)
+    print('residual', residual.shape, flush=True)
 
     sum = new + residual
     '归一化'
@@ -817,7 +910,7 @@ train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=G.batch_siz
 valid_loader = torch.utils.data.DataLoader(valid_dataset, batch_size=G.batch_size, shuffle=False)
 test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=G.batch_size, shuffle=False)
 
-print(f"Model parameters: {sum(p.numel() for p in model.parameters())}")
+print(f"Model parameters: {sum(p.numel() for p in model.parameters())}", flush=True)
 
 # Enable anomaly detection to find the in-place operation
 torch.autograd.set_detect_anomaly(True)
@@ -859,7 +952,7 @@ for epoch in range(G.epochs):
                 val_batches += 1
         
         avg_val_loss = val_loss / val_batches
-        print(f'Epoch {epoch}, Train Loss: {avg_loss:.4f}, Val Loss: {avg_val_loss:.4f}')
+        print(f'Epoch {epoch}, Train Loss: {avg_loss:.4f}, Val Loss: {avg_val_loss:.4f}', flush=True)
         model.train()
 
 # Testing
@@ -881,21 +974,40 @@ all_targets = np.concatenate(all_targets, axis=0)
 pred_denorm, pred_sum = denormalize(all_predictions)
 target_denorm, target_sum = denormalize(all_targets)
 
-# Calculate and display accuracy metrics
-accuracy_df = calculate_accuracy(pred_sum.flatten(), target_sum.flatten())
+# Calculate and display accuracy metrics for multi-day predictions
+accuracy_df = calculate_multi_day_accuracy(pred_sum, target_sum)
 
-# Save results
-results_df = pd.DataFrame({
-    'Predictions': pred_sum.flatten(),
-    'Actual': target_sum.flatten()
-})
-results_df.to_csv('BTC-USD_Galformer_predictions.csv', index=False)
-print("Results saved to BTC-USD_Galformer_predictions.csv")
+# Save results with individual day predictions
+if pred_sum.shape[1] > 1:  # Multi-day predictions
+    results_data = {}
+    for day in range(pred_sum.shape[1]):
+        results_data[f'Prediction_Day_{day+1}'] = pred_sum[:, day]
+        results_data[f'Actual_Day_{day+1}'] = target_sum[:, day]
+    results_df = pd.DataFrame(results_data)
+else:  # Single day predictions
+    results_df = pd.DataFrame({
+        'Predictions': pred_sum.flatten(),
+        'Actual': target_sum.flatten()
+    })
+
+results_df.to_csv(config['output']['predictions_path'], index=False)
+print(f"Results saved to {config['output']['predictions_path']}", flush=True)
+print(f"Saved {pred_sum.shape[0]} samples with {pred_sum.shape[1]}-day predictions", flush=True)
 
 # Plot results if data_plot function is available
 try:
-    data_plot(pred_sum.flatten(), target_sum.flatten(), 'BTC-USD Galformer Predictions')
+    data_plot({'Predictions': pred_sum.flatten(), 'Actual': target_sum.flatten()}, 
+              'BTC-USD Galformer 3-Day Predictions', save_path=config['output']['plot_path'])
 except:
-    print("Plotting function not available, skipping visualization")
+    print("Plotting function not available, skipping visualization", flush=True)
 
-print("Training and evaluation completed!")
+# Save the trained model
+model_save_path = config['output']['model_path']
+torch.save({
+    'model_state_dict': model.state_dict(),
+    'optimizer_state_dict': optimizer.state_dict(),
+    'config': config  # Save the entire config instead of manual specification
+}, model_save_path)
+
+print(f"Model saved to {model_save_path}", flush=True)
+print("Training and evaluation completed!", flush=True)
