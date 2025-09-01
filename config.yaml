@@ -2,12 +2,12 @@
 
 # Experiment configuration
 experiment:
-  name: 'galformer_btc_3day_prediction'
-  description: 'Galformer model predicting BTC prices 3 days ahead'
+  name: 'ixic_3day_prediction'
+  description: 'Galformer model predicting IXC prices 3 days ahead'
 
 # Data preprocessing
 data:
-  filename: 'Datasets/BTC-USD.csv'
+  filename: 'Datasets/IXIC.csv'
   division_rate1: 0.8  # train/validation split
   division_rate2: 0.9  # validation/test split
   normalize: true
@@ -45,5 +45,5 @@ scheduler:
 # Output paths (will be prefixed with runs/{experiment.name}/)
 output:
   model_path: 'galformer_model_three_days_ahead.pth'
-  predictions_path: 'BTC-USD_Galformer_predictions_three_days_ahead.csv'
-  plot_path: 'BTC-USD_Galformer_predictions_three_days_ahead.png'
+  predictions_path: 'Galformer_predictions_three_days_ahead.csv'
+  plot_path: 'Galformer_predictions_three_days_ahead.png'

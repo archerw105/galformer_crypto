@@ -1,4 +1,12 @@
 # Galformer-Improved-Transformer-for-Time-Series-Prediction
+To train the model, run the following command:
+```
+python Galformer_pytorch.py
+```
+
+Results are saved in the `runs/<experiment_name>` folder
+
+---------------------------------------------
 Galformer: A Transformer with Generative Decoding and a Hybrid Loss Function for Multi-Step Stock Market Index Prediction(Tensorflow 2.9.1, Python 3.7)
 
 The paper has been published, DOI : https://doi.org/10.1038/s41598-024-72045-3
