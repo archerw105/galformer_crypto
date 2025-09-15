@@ -18,15 +18,8 @@ import yaml
 import sys
 import os
 
-print("Starting Galformer script...", flush=True)
-
 # Set device
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-if torch.cuda.is_available():
-    print(f'Using GPU: {torch.cuda.get_device_name(0)}', flush=True)
-    print(f'GPU memory: {torch.cuda.get_device_properties(0).total_memory / 1024**3:.1f} GB', flush=True)
-else:
-    print("Using CPU", flush=True)
 
 # Helper functions (replacing transformer_helper_dc imports)
 def positional_encoding(max_position, d_model):
@@ -282,6 +275,8 @@ def load_data(df, seq_len , mul, normalize=True):
         train = standard_scaler.fit_transform(train)
         valid = standard_scaler.transform(valid)
         test = standard_scaler.transform(test)
+    else:
+        standard_scaler = None
 
     print('train',train, flush=True)
     print('valid', valid, flush=True)
@@ -336,17 +331,6 @@ def load_data(df, seq_len , mul, normalize=True):
     print('X_test', X_test.shape, flush=True)
     return X_train, y_train, X_valid, y_valid, X_test, y_test  # x是训练的数据，y是数据对应的标签,也就是说y是要预测的那一个特征!!!!!!
 
-# Main execution
-df,list,list1 = get_stock_data()
-X_train, y_train, X_valid, y_valid, X_test, y_test = load_data(df, seq_len, mulpre)
-
-# Convert to PyTorch tensors
-X_train = torch.FloatTensor(X_train).to(device)
-y_train = torch.FloatTensor(y_train).to(device)
-X_valid = torch.FloatTensor(X_valid).to(device)
-y_valid = torch.FloatTensor(y_valid).to(device)
-X_test = torch.FloatTensor(X_test).to(device)
-y_test = torch.FloatTensor(y_test).to(device)
 
 
 #################################
@@ -897,117 +881,140 @@ def denormalize(normalized_value):
     new = min_max_scaler.transform(test)  # 利用m对test也进行归一化,注意这里是transform不能是fit_transform!!!1'''
     return new,sum#new是差分预测值，sum是没差分的预测值
 
-# Create model and training setup
-model = Transformer().to(device)
-optimizer = torch.optim.Adam(model.parameters(), lr=G.learning_rate)
+if __name__ == "__main__":
+    print("Starting Galformer script...", flush=True)
 
-# Create DataLoaders
-train_dataset = torch.utils.data.TensorDataset(X_train, y_train)
-valid_dataset = torch.utils.data.TensorDataset(X_valid, y_valid)
-test_dataset = torch.utils.data.TensorDataset(X_test, y_test)
-
-train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=G.batch_size, shuffle=True)
-valid_loader = torch.utils.data.DataLoader(valid_dataset, batch_size=G.batch_size, shuffle=False)
-test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=G.batch_size, shuffle=False)
-
-print(f"Model parameters: {sum(p.numel() for p in model.parameters())}", flush=True)
-
-# Enable anomaly detection to find the in-place operation
-torch.autograd.set_detect_anomaly(True)
-
-# Training loop
-model.train()
-for epoch in range(G.epochs):
-    total_loss = 0
-    num_batches = 0
     
-    for batch_x, batch_y in train_loader:
-        optimizer.zero_grad()
-        
-        # Forward pass
-        predictions = model(batch_x, training=True)
-        
-        # Calculate loss
-        loss = up_down_accuracy_loss(batch_y, predictions)
-        
-        # Backward pass
-        loss.backward()
-        optimizer.step()
-        
-        total_loss += loss.item()
-        num_batches += 1
+    if torch.cuda.is_available():
+        print(f'Using GPU: {torch.cuda.get_device_name(0)}', flush=True)
+        print(f'GPU memory: {torch.cuda.get_device_properties(0).total_memory / 1024**3:.1f} GB', flush=True)
+    else:
+        print("Using CPU", flush=True)
+
+    # Main execution
+    df,list,list1 = get_stock_data()
+    X_train, y_train, X_valid, y_valid, X_test, y_test = load_data(df, seq_len, mulpre)
+
+    # Convert to PyTorch tensors
+    X_train = torch.FloatTensor(X_train).to(device)
+    y_train = torch.FloatTensor(y_train).to(device)
+    X_valid = torch.FloatTensor(X_valid).to(device)
+    y_valid = torch.FloatTensor(y_valid).to(device)
+    X_test = torch.FloatTensor(X_test).to(device)
+    y_test = torch.FloatTensor(y_test).to(device)
     
-    avg_loss = total_loss / num_batches
-    
-    # Validation
-    if epoch % 10 == 0:
-        model.eval()
-        val_loss = 0
-        val_batches = 0
+    # Create model and training setup
+    model = Transformer().to(device)
+    optimizer = torch.optim.Adam(model.parameters(), lr=G.learning_rate)
+
+    # Create DataLoaders
+    train_dataset = torch.utils.data.TensorDataset(X_train, y_train)
+    valid_dataset = torch.utils.data.TensorDataset(X_valid, y_valid)
+    test_dataset = torch.utils.data.TensorDataset(X_test, y_test)
+
+    train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=G.batch_size, shuffle=True)
+    valid_loader = torch.utils.data.DataLoader(valid_dataset, batch_size=G.batch_size, shuffle=False)
+    test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=G.batch_size, shuffle=False)
+
+    print(f"Model parameters: {sum(p.numel() for p in model.parameters())}", flush=True)
+
+    # Enable anomaly detection to find the in-place operation
+    torch.autograd.set_detect_anomaly(True)
+
+    # Training loop
+    model.train()
+    for epoch in range(G.epochs):
+        total_loss = 0
+        num_batches = 0
         
-        with torch.no_grad():
-            for batch_x, batch_y in valid_loader:
-                val_predictions = model(batch_x, training=False)
-                val_loss += up_down_accuracy_loss(batch_y, val_predictions).item()
-                val_batches += 1
+        for batch_x, batch_y in train_loader:
+            optimizer.zero_grad()
+            
+            # Forward pass
+            predictions = model(batch_x, training=True)
+            
+            # Calculate loss
+            loss = up_down_accuracy_loss(batch_y, predictions)
+            
+            # Backward pass
+            loss.backward()
+            optimizer.step()
+            
+            total_loss += loss.item()
+            num_batches += 1
         
-        avg_val_loss = val_loss / val_batches
-        print(f'Epoch {epoch}, Train Loss: {avg_loss:.4f}, Val Loss: {avg_val_loss:.4f}', flush=True)
-        model.train()
+        avg_loss = total_loss / num_batches
+        
+        # Validation
+        if epoch % 10 == 0:
+            model.eval()
+            val_loss = 0
+            val_batches = 0
+            
+            with torch.no_grad():
+                for batch_x, batch_y in valid_loader:
+                    val_predictions = model(batch_x, training=False)
+                    val_loss += up_down_accuracy_loss(batch_y, val_predictions).item()
+                    val_batches += 1
+            
+            avg_val_loss = val_loss / val_batches
+            print(f'Epoch {epoch}, Train Loss: {avg_loss:.4f}, Val Loss: {avg_val_loss:.4f}', flush=True)
+            model.train()
 
-# Testing
-model.eval()
-all_predictions = []
-all_targets = []
+    # Testing
+    model.eval()
+    all_predictions = []
+    all_targets = []
 
-with torch.no_grad():
-    for batch_x, batch_y in test_loader:
-        predictions = model(batch_x, training=False)
-        all_predictions.append(predictions.cpu().numpy())
-        all_targets.append(batch_y.cpu().numpy())
+    with torch.no_grad():
+        for batch_x, batch_y in test_loader:
+            predictions = model(batch_x, training=False)
+            all_predictions.append(predictions.cpu().numpy())
+            all_targets.append(batch_y.cpu().numpy())
 
-# Concatenate all predictions and targets
-all_predictions = np.concatenate(all_predictions, axis=0)
-all_targets = np.concatenate(all_targets, axis=0)
+    # Concatenate all predictions and targets
+    all_predictions = np.concatenate(all_predictions, axis=0)
+    all_targets = np.concatenate(all_targets, axis=0)
 
-# Denormalize predictions and calculate accuracy
-pred_denorm, pred_sum = denormalize(all_predictions)
-target_denorm, target_sum = denormalize(all_targets)
+    # Denormalize predictions and calculate accuracy
+    pred_denorm, pred_sum = denormalize(all_predictions)
+    target_denorm, target_sum = denormalize(all_targets)
 
-# Calculate and display accuracy metrics for multi-day predictions
-accuracy_df = calculate_multi_day_accuracy(pred_sum, target_sum)
+    # Calculate and display accuracy metrics for multi-day predictions
+    accuracy_df = calculate_multi_day_accuracy(pred_sum, target_sum)
 
-# Save results with individual day predictions
-if pred_sum.shape[1] > 1:  # Multi-day predictions
-    results_data = {}
-    for day in range(pred_sum.shape[1]):
-        results_data[f'Prediction_Day_{day+1}'] = pred_sum[:, day]
-        results_data[f'Actual_Day_{day+1}'] = target_sum[:, day]
-    results_df = pd.DataFrame(results_data)
-else:  # Single day predictions
-    results_df = pd.DataFrame({
-        'Predictions': pred_sum.flatten(),
-        'Actual': target_sum.flatten()
-    })
+    # Save results with individual day predictions
+    if pred_sum.shape[1] > 1:  # Multi-day predictions
+        results_data = {}
+        for day in range(pred_sum.shape[1]):
+            results_data[f'Prediction_Day_{day+1}'] = pred_sum[:, day]
+            results_data[f'Actual_Day_{day+1}'] = target_sum[:, day]
+        results_df = pd.DataFrame(results_data)
+    else:  # Single day predictions
+        results_df = pd.DataFrame({
+            'Predictions': pred_sum.flatten(),
+            'Actual': target_sum.flatten()
+        })
 
-results_df.to_csv(config['output']['predictions_path'], index=False)
-print(f"Results saved to {config['output']['predictions_path']}", flush=True)
-print(f"Saved {pred_sum.shape[0]} samples with {pred_sum.shape[1]}-day predictions", flush=True)
+    results_df.to_csv(config['output']['predictions_path'], index=False)
+    print(f"Results saved to {config['output']['predictions_path']}", flush=True)
+    print(f"Saved {pred_sum.shape[0]} samples with {pred_sum.shape[1]}-day predictions", flush=True)
 
-# Plot results if data_plot function is available
-try:
-    data_plot({'Predictions': pred_sum.flatten(), 'Actual': target_sum.flatten()}, 
-              'BTC-USD Galformer 3-Day Predictions', save_path=config['output']['plot_path'])
-except:
-    print("Plotting function not available, skipping visualization", flush=True)
+    # Plot results if data_plot function is available
+    try:
+        data_plot({'Predictions': pred_sum.flatten(), 'Actual': target_sum.flatten()}, 
+                f"{config['experiment']['name']} {pred_sum.shape[1]}-Day Predictions", save_path=config['output']['plot_path'])
+    except:
+        print("Plotting function not available, skipping visualization", flush=True)
 
-# Save the trained model
-model_save_path = config['output']['model_path']
-torch.save({
-    'model_state_dict': model.state_dict(),
-    'optimizer_state_dict': optimizer.state_dict(),
-    'config': config  # Save the entire config instead of manual specification
-}, model_save_path)
+    # Save the trained model
+    model_save_path = config['output']['model_path']
+    torch.save({
+        'model_state_dict': model.state_dict(),
+        'optimizer_state_dict': optimizer.state_dict(),
+        'scaler': standard_scaler,  # Save the fitted scaler
+        'config': config  # Save the entire config instead of manual specification
+    }, model_save_path)
 
-print(f"Model saved to {model_save_path}", flush=True)
-print("Training and evaluation completed!", flush=True)
+    print(f"Model saved to {model_save_path}", flush=True)
+    print("Training and evaluation completed!", flush=True)

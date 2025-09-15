@@ -2,3 +2,4 @@ galformer/
 runs/
 *.err
 *.out
+__pycache__/

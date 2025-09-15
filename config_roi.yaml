@@ -1,15 +1,16 @@
-# Galformer Configuration File
+# Galformer ROI Analysis Configuration File
 
 # Experiment configuration
 experiment:
-  name: 'galformer_btc_1day_prediction'
-  description: 'Galformer model predicting BTC prices 1 day ahead'
+  name: 'galformer_btc_roi_analysis'
+  description: 'ROI analysis on full BTC dataset'
 
 # Data preprocessing
 data:
-  filename: 'Datasets/BTC-USD.csv'
-  division_rate1: 0.8  # train/validation split
-  division_rate2: 0.9  # validation/test split
+  filename: 'Datasets/btc_daily_last_3000_days.csv' # BTC-USD.csv
+  division_rate1: 0.8  # train/validation split (no training data needed)
+  division_rate2: 0.9  # validation/test split (use entire dataset for testing)
+  normalize: true
 
 # Model architecture
 model:
@@ -28,18 +29,23 @@ sequence:
   window_size: 20  # same as src_len
   mulpr_len: 1     # same as tgt_len (predict 1 day ahead)
 
-# Training parameters
+# Training parameters (not used for ROI analysis)
 training:
-  epochs: 200
-  batch_size: 64
-  learning_rate: 0.003
-  min_learning_rate: 7e-11
+  batch_size: 32
+  epochs: 100
+  learning_rate: 0.0001
+  min_learning_rate: 0.00001
 
-# Learning rate scheduler
+# Learning rate scheduler (not used for ROI analysis)
 scheduler:
-  T_i: 1
+  T_i: 10
   T_mult: 2
-  T_cur: 0.0
+  T_cur: 0
+
+# Noise testing configuration
+noise_test:
+  enabled: false
+  noise_level: 1.0  # percentage of price volatility to add as noise
 
 # Output paths (will be prefixed with runs/{experiment.name}/)
 output:
