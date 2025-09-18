@@ -71,15 +71,34 @@ def prepare_test_data(config, scaler=None):
     train = data[:int(row1), :]
     test = data[int(row2):, :]
     
-    # Use the saved scaler from training if available, otherwise recreate
+    # Create a scaler that works only on the Adj Close column (index -2)
+    # This ensures denormalization will work correctly with single-column predictions
+    adj_close_scaler = preprocessing.StandardScaler()
+    train_adj_close = train[:, -2:(-2+1)]  # Extract just the Adj Close column
+    test_adj_close = test[:, -2:(-2+1)]
+    
+    # Fit scaler on training Adj Close data only
+    adj_close_scaler.fit(train_adj_close)
+    
+    # Normalize the full test data using the same logic as training
     if scaler is not None:
-        standard_scaler = scaler
-        test_norm = scaler.transform(test)
+        # Use the saved full scaler for consistency with training normalization
+        try:
+            test_norm = scaler.transform(test)
+            print("Using saved scaler for test data normalization")
+        except ValueError:
+            print("Saved scaler dimension mismatch, using new scaler")
+            full_scaler = preprocessing.StandardScaler()
+            train_norm = full_scaler.fit_transform(train)
+            test_norm = full_scaler.transform(test)
     else:
         print("No scaler found, recreating scaler from training data")
-        standard_scaler = preprocessing.StandardScaler()
-        train_norm = standard_scaler.fit_transform(train)
-        test_norm = standard_scaler.transform(test)
+        full_scaler = preprocessing.StandardScaler()
+        train_norm = full_scaler.fit_transform(train)
+        test_norm = full_scaler.transform(test)
+    
+    # Use the Adj Close-only scaler for denormalization
+    standard_scaler = adj_close_scaler
     
     # Create sequences exactly like in load_data()
     X_test = []

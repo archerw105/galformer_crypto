@@ -25,7 +25,7 @@ source galformer/bin/activate
 export CUDA_VISIBLE_DEVICES=0
 
 # Change to working directory
-cd /u/archerdw/Galformer-Improved-Transformer-for-Time-Series-Prediction
+cd /u/archerdw/galformer_project
 
 # Print job information
 echo "Job ID: $SLURM_JOB_ID"
@@ -35,7 +35,7 @@ echo "GPU: $CUDA_VISIBLE_DEVICES"
 echo "Start Time: $(date)"
 
 # Run the Galformer PyTorch model
-python Galformer_pytorch.py
+python Galformer_pytorch_fixed.py
 
 echo "End Time: $(date)"
 echo "Job completed successfully"

@@ -719,6 +719,11 @@ class Transformer(nn.Module):
             nn.Linear(dense_dim, 1)
         )
         
+        # Final dense layer for sequence length transformation
+        # Note: This will be dynamically sized based on actual sequence length in forward pass
+        # We'll initialize it with a placeholder and recreate if needed
+        self.final_dense = None
+        
         # Initialize weights
         for layer in self.linear_map:
             if isinstance(layer, nn.Linear):
@@ -765,8 +770,15 @@ class Transformer(nn.Module):
         
         # Transpose and apply final dense layer (equivalent to TF operations)
         final_output = final_output.transpose(1, 2)  # (batch_size, 1, seq_len)
-        final_dense = nn.Linear(seq_len, G.tgt_len).to(device)
-        final_output = final_dense(final_output)
+        
+        # Create or reuse final dense layer with proper input size
+        if self.final_dense is None or self.final_dense.in_features != seq_len:
+            self.final_dense = nn.Linear(seq_len, G.tgt_len).to(device)
+            # Initialize the weights properly
+            nn.init.kaiming_normal_(self.final_dense.weight)
+            nn.init.uniform_(self.final_dense.bias, 0.001, 0.02)
+        
+        final_output = self.final_dense(final_output)
         final_output = final_output.transpose(1, 2)  # (batch_size, tgt_len, 1)
         
         # print('final_output.shape', final_output.shape)

@@ -2,12 +2,12 @@
 
 # Experiment configuration
 experiment:
-  name: 'galformer_btc_1day_prediction'
+  name: 'galformer_btc_1day_prediction-20250915-v3-5'
   description: 'Galformer model predicting BTC prices 1 day ahead'
 
 # Data preprocessing
 data:
-  filename: 'Datasets/BTC-USD.csv'
+  filename: 'Datasets/btc_daily_last_3000_days.csv'
   division_rate1: 0.8  # train/validation split
   division_rate2: 0.9  # validation/test split
 
@@ -34,6 +34,8 @@ training:
   batch_size: 64
   learning_rate: 0.003
   min_learning_rate: 7e-11
+  load_model_path: "" # "runs/galformer_btc_1day_prediction-20250915-v3-2/galformer_model.pth"  # Set to path of saved model to load instead of training from scratch
+  skip_training: false  # Set to true to skip training and only run inference
 
 # Learning rate scheduler
 scheduler:
