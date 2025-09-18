@@ -225,7 +225,12 @@ def load_model(model_path, device):
     # Create optimizer and load its state if available
     optimizer = torch.optim.Adam(model.parameters(), lr=saved_config.get('training', {}).get('learning_rate', 0.001))
     if 'optimizer_state_dict' in checkpoint:
-        optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+        try:
+            optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+            print("Optimizer state loaded successfully", flush=True)
+        except ValueError as e:
+            print(f"Warning: Could not load optimizer state (model architecture changed): {e}", flush=True)
+            print("Continuing with fresh optimizer state...", flush=True)
     
     # Load scaler if available
     scaler = checkpoint.get('scaler', None)
@@ -720,9 +725,8 @@ class Transformer(nn.Module):
         )
         
         # Final dense layer for sequence length transformation
-        # Note: This will be dynamically sized based on actual sequence length in forward pass
-        # We'll initialize it with a placeholder and recreate if needed
-        self.final_dense = None
+        # Initialize with a default size - will be recreated if sequence length differs
+        self.final_dense = nn.Linear(self.dec_len, self.tgt_len)
         
         # Initialize weights
         for layer in self.linear_map:
@@ -730,6 +734,10 @@ class Transformer(nn.Module):
                 nn.init.kaiming_normal_(layer.weight)
                 if layer.out_features == dense_dim:
                     nn.init.uniform_(layer.bias, 0.001, 0.02)
+        
+        # Initialize final_dense layer weights
+        nn.init.kaiming_normal_(self.final_dense.weight)
+        nn.init.uniform_(self.final_dense.bias, 0.001, 0.02)
 
     def forward(self, x, training=True):
         """
@@ -957,6 +965,7 @@ def calculate_roi(predictions, actual_prices, initial_capital=10000, allow_short
     shares = 0
     trades = []
     portfolio_values = [initial_capital]
+    positions = [0]  # Track position at each time step
     
     for i in range(1, len(predictions)):
         current_price = actual_prices[i-1]
@@ -1017,6 +1026,7 @@ def calculate_roi(predictions, actual_prices, initial_capital=10000, allow_short
             portfolio_value = capital
             
         portfolio_values.append(portfolio_value)
+        positions.append(position)
     
     # Close any remaining position
     if position == 1:
@@ -1041,7 +1051,8 @@ def calculate_roi(predictions, actual_prices, initial_capital=10000, allow_short
         'buy_hold_return_pct': buy_hold_return,
         'num_trades': len(trades),
         'trades': trades,
-        'portfolio_values': portfolio_values
+        'portfolio_values': portfolio_values,
+        'positions': positions
     }
 
 
@@ -1155,6 +1166,52 @@ def analyze_trading_performance(predictions, actual_prices, initial_capital=1000
     plot_roi_analysis(roi_results, predictions, actual_prices, save_path)
     
     return roi_results
+
+def plot_drawdown_and_turnover(roi_results, save_path_base):
+    """Plot drawdown and daily turnover with minimal code"""
+    
+    # Extract data
+    portfolio_values = roi_results['portfolio_values']
+    positions = roi_results['positions']
+    
+    # Calculate drawdown
+    portfolio_values = np.array(portfolio_values)
+    peak = np.maximum.accumulate(portfolio_values)
+    
+    # Handle division by zero for negative peaks
+    with np.errstate(divide='ignore', invalid='ignore'):
+        drawdown = (portfolio_values - peak) / peak * 100
+        drawdown = np.nan_to_num(drawdown, nan=-100, posinf=0, neginf=-100)
+    
+    # Calculate daily turnover (position changes)
+    position_changes = np.abs(np.diff(positions, prepend=positions[0]))
+    
+    # Create plots
+    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 8))
+    
+    # Drawdown plot
+    ax1.fill_between(range(len(drawdown)), drawdown, 0, alpha=0.3, color='red')
+    ax1.plot(drawdown, color='red', linewidth=1)
+    ax1.set_title('Portfolio Drawdown')
+    ax1.set_ylabel('Drawdown (%)')
+    ax1.grid(True, alpha=0.3)
+    
+    # Turnover plot
+    ax2.bar(range(len(position_changes)), position_changes, alpha=0.7, color='blue')
+    ax2.set_title('Daily Position Turnover')
+    ax2.set_ylabel('Position Change')
+    ax2.set_xlabel('Trading Days')
+    ax2.grid(True, alpha=0.3)
+    
+    plt.tight_layout()
+    plt.savefig(save_path_base.replace('.png', '_drawdown_turnover.png'), dpi=150, bbox_inches='tight')
+    plt.close()
+    
+    # Print key metrics
+    max_drawdown = np.min(drawdown)
+    avg_turnover = np.mean(position_changes)
+    print(f"Max Drawdown: {max_drawdown:.2f}%", flush=True)
+    print(f"Average Daily Turnover: {avg_turnover:.4f}", flush=True)
 
 
 if __name__ == "__main__":
@@ -1372,9 +1429,16 @@ if __name__ == "__main__":
         plot_roi_analysis(roi_long_short, predictions_for_roi, actuals_for_roi,
                          save_path=config['output']['plot_path'].replace('.png', '_roi_long_short.png'))
         
-        print(f"✅ Plots saved:", flush=True)
-        print(f"  Long-Only: {config['output']['plot_path'].replace('.png', '_roi_long_only.png')}", flush=True)
-        print(f"  Long-Short: {config['output']['plot_path'].replace('.png', '_roi_long_short.png')}", flush=True)
+        # Plot drawdown and turnover for both strategies
+        print("\n📉 Generating drawdown and turnover plots...", flush=True)
+        plot_drawdown_and_turnover(roi_long_only, config['output']['plot_path'].replace('.png', '_long_only.png'))
+        plot_drawdown_and_turnover(roi_long_short, config['output']['plot_path'].replace('.png', '_long_short.png'))
+        
+        print(f"✅ All plots saved:", flush=True)
+        print(f"  Long-Only ROI: {config['output']['plot_path'].replace('.png', '_roi_long_only.png')}", flush=True)
+        print(f"  Long-Short ROI: {config['output']['plot_path'].replace('.png', '_roi_long_short.png')}", flush=True)
+        print(f"  Long-Only Drawdown/Turnover: {config['output']['plot_path'].replace('.png', '_long_only_drawdown_turnover.png')}", flush=True)
+        print(f"  Long-Short Drawdown/Turnover: {config['output']['plot_path'].replace('.png', '_long_short_drawdown_turnover.png')}", flush=True)
         
     except Exception as e:
         print(f"ROI analysis failed: {e}", flush=True)
